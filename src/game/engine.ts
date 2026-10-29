@@ -54,6 +54,7 @@ export interface MoveInput {
   left: boolean;
   right: boolean;
   sprint: boolean;
+  yaw: number;
 }
 
 export interface Snapshot {
@@ -144,13 +145,12 @@ export class SurvivalWorld {
   readonly inventory: Inventory = initialInventory();
 
   selectedSlot = 0;
-  selectedNodeId: number | null = null;
   elapsed = 0;
   worldMinutes = 8 * 60 + 20;
   paused = false;
   torchLit = true;
+  aimYaw = -0.45;
   private nextId = 1;
-  private worldClock = 0;
   private spawn = { ...SPAWN };
 
   constructor(seed = 20261029) {
@@ -236,19 +236,28 @@ export class SurvivalWorld {
   }
 
   get nearestNode(): ResourceNode | null {
-    const selected = this.nodes.find((node) => node.id === this.selectedNodeId && !node.gone);
-    if (selected && distance(selected.x, selected.y, this.player.x, this.player.y) < 3.4) return selected;
     let closest: ResourceNode | null = null;
-    let closestDistance = 3.2;
+    let bestScore = Number.POSITIVE_INFINITY;
     for (const node of this.nodes) {
       if (node.gone) continue;
-      const d = distance(node.x, node.y, this.player.x, this.player.y);
-      if (d < closestDistance) {
+      const dx = node.x - this.player.x;
+      const dy = node.y - this.player.y;
+      const d = Math.hypot(dx, dy);
+      if (d > 5.2 || d < 0.55) continue;
+      const targetYaw = Math.atan2(-dx, -dy);
+      const delta = Math.atan2(Math.sin(targetYaw - this.aimYaw), Math.cos(targetYaw - this.aimYaw));
+      if (Math.abs(delta) > 0.43) continue;
+      const score = d + Math.abs(delta) * 1.8;
+      if (score < bestScore) {
         closest = node;
-        closestDistance = d;
+        bestScore = score;
       }
     }
     return closest;
+  }
+
+  setAim(yaw: number): void {
+    this.aimYaw = yaw;
   }
 
   get nearestDistance(): number {
@@ -287,12 +296,14 @@ export class SurvivalWorld {
     if (this.paused) return;
     const step = Math.min(dt, 0.05);
     this.elapsed += step;
-    this.worldClock += step;
+    this.aimYaw = input.yaw;
     this.worldMinutes += step * 1.15;
     if (this.worldMinutes >= 24 * 60) this.worldMinutes -= 24 * 60;
 
-    const ix = Number(input.right) - Number(input.left);
-    const iy = Number(input.down) - Number(input.up);
+    const forward = Number(input.up) - Number(input.down);
+    const strafe = Number(input.right) - Number(input.left);
+    const ix = -Math.sin(input.yaw) * forward + Math.cos(input.yaw) * strafe;
+    const iy = -Math.cos(input.yaw) * forward - Math.sin(input.yaw) * strafe;
     const mag = Math.hypot(ix, iy);
     const moving = mag > 0;
     const sprinting = moving && input.sprint && this.player.stamina > 1;
@@ -321,10 +332,6 @@ export class SurvivalWorld {
     if (t.terrain === "water") return false;
     if (this.nodes.some((node) => !node.gone && distance(x, y, node.x, node.y) < 0.46)) return false;
     return !this.structures.some((s) => s.kind === "wall" && distance(x, y, s.x, s.y) < 0.47);
-  }
-
-  selectNode(id: number | null): void {
-    this.selectedNodeId = id;
   }
 
   selectHotbar(slot: number): string | null {

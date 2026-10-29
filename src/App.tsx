@@ -43,7 +43,7 @@ import {
   type ToolKind,
 } from "./game/engine";
 
-const noInput = () => ({ up: false, down: false, left: false, right: false, sprint: false });
+const noInput = () => ({ up: false, down: false, left: false, right: false, sprint: false, yaw: -0.45 });
 
 type PanelName = "craft" | "inventory" | "map" | "pause" | null;
 type CraftCategory = "survival" | "building";
@@ -361,11 +361,17 @@ export default function App() {
   const [panel, setPanel] = useState<PanelName>(null);
   const [craftCategory, setCraftCategory] = useState<CraftCategory>("survival");
   const [pulse, setPulse] = useState(0);
+  const [fps, setFps] = useState(60);
+  const [pointerLocked, setPointerLocked] = useState(false);
   const [toast, setToast] = useState("");
   const [toastKey, setToastKey] = useState(0);
   const toastTimer = useRef<number | undefined>(undefined);
 
-  const onFrame = useCallback(() => setPulse((value) => value + 1), []);
+  const onFrame = useCallback((value: number) => {
+    setPulse((revision) => revision + 1);
+    setFps(value);
+  }, []);
+  const onLockChange = useCallback((locked: boolean) => setPointerLocked(locked), []);
   const notify = useCallback((message: string) => {
     setToast(message);
     setToastKey((value) => value + 1);
@@ -375,10 +381,12 @@ export default function App() {
 
   const togglePanel = useCallback((name: Exclude<PanelName, "pause" | null>) => {
     world.paused = false;
+    if (document.pointerLockElement) document.exitPointerLock();
     setPanel((current) => current === name ? null : name);
   }, [world]);
 
   const pause = useCallback(() => {
+    if (document.pointerLockElement) document.exitPointerLock();
     if (panel === "pause") {
       world.paused = false;
       setPanel(null);
@@ -397,7 +405,8 @@ export default function App() {
   }, [world, notify]);
 
   useEffect(() => {
-    const movement = new Map<string, keyof ReturnType<typeof noInput>>([
+    type MovementKey = "up" | "down" | "left" | "right" | "sprint";
+    const movement = new Map<string, MovementKey>([
       ["KeyW", "up"], ["ArrowUp", "up"], ["KeyS", "down"], ["ArrowDown", "down"],
       ["KeyA", "left"], ["ArrowLeft", "left"], ["KeyD", "right"], ["ArrowRight", "right"],
       ["ShiftLeft", "sprint"], ["ShiftRight", "sprint"],
@@ -460,7 +469,7 @@ export default function App() {
 
   return (
     <main className="game-shell">
-      <GameCanvas world={world} input={input} onFrame={onFrame} onNotify={notify} />
+      <GameCanvas world={world} input={input} onFrame={onFrame} onNotify={notify} onLockChange={onLockChange} />
       <div className="screen-grain" aria-hidden="true" />
       <div className="hud-vignette" aria-hidden="true" />
 
@@ -484,7 +493,7 @@ export default function App() {
         </div>
 
         <div className="header-actions">
-          <div className="server-ping"><Signal size={13} /><span>18 <i>мс</i></span></div>
+          <div className="server-ping" title="Текущая частота кадров"><Signal size={13} /><span>{fps} <i>FPS</i></span></div>
           <button className={`header-tool${panel === "map" ? " tool-active" : ""}`} onClick={() => togglePanel("map")} title="Карта · M" aria-label="Открыть карту"><MapIcon size={16} /><span>Карта</span></button>
           <button className={`header-tool${panel === "craft" ? " tool-active" : ""}`} onClick={() => { setCraftCategory("survival"); togglePanel("craft"); }} title="Крафт · C" aria-label="Открыть изготовление"><Hammer size={16} /><span>Крафт</span></button>
           <button className={`header-tool${panel === "inventory" ? " tool-active" : ""}`} onClick={() => togglePanel("inventory")} title="Рюкзак · I" aria-label="Открыть рюкзак"><Backpack size={16} /><span>Рюкзак</span></button>
@@ -532,6 +541,8 @@ export default function App() {
       </section>
 
       <div className="world-caption"><span className="caption-line" /> <span>ЗАЛИВ ПОЛЫНЬ</span> <i>·</i> <span>СЕВЕРНАЯ ТАЙГА</span></div>
+      <div className="center-reticle" aria-hidden="true"><i /><i /><i /><i /><b /></div>
+      {!pointerLocked && <div className="look-hint"><Crosshair size={13} /> КЛИКНИ ПО МИРУ · МЫШЬ — ОБЗОР</div>}
 
       <section className="bottom-hud">
         <div className="interaction-hint">
